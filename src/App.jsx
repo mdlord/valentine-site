@@ -526,11 +526,12 @@ function RunawayButton({ children, onClick, disabled = false, style }) {
   );
 }
 
-function PrimaryButton({ children, onClick, style }) {
+function PrimaryButton({ children, onClick, style, disabled = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       style={{
         background: "var(--button-color)",
         color: "white",
@@ -541,11 +542,17 @@ function PrimaryButton({ children, onClick, style }) {
         fontWeight: 500,
         cursor: "pointer",
         boxShadow: "0 10px 20px rgba(0,0,0,0.12)",
-        transition: "transform 160ms ease, filter 160ms ease",
+        transition: "transform 160ms ease, filter 160ms ease, opacity 160ms ease",
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? "not-allowed" : "pointer",
         ...style,
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.03)")}
-      onMouseLeave={(e) => (e.currentTarget.style.filter = "brightness(1)")}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.filter = "brightness(1.03)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.filter = "brightness(1)";
+      }}
     >
       {children}
     </button>
@@ -1029,7 +1036,7 @@ function Step3Puzzle({ onDone }) {
             Shuffle
           </PrimaryButton>
         )}
-        {stage === "puzzle" && moves >= 50 && (
+        {stage === "puzzle" && moves >= 30 && (
           <PrimaryButton
             onClick={() => {
               onDone?.();
@@ -1461,7 +1468,22 @@ export default function App() {
                 </div>
 
                 <div style={{ marginTop: 18 }}>
-                  <PrimaryButton onClick={() => goStep(6)}>{config.questions.second.nextBtn}</PrimaryButton>
+                  {loveValue < 2000 && (
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        color: "var(--accent-text)",
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      You haven&apos;t met the expected level of anticipated lovingness yet.
+                      Please crank it to at least 2000% to continue.
+                    </div>
+                  )}
+                  <PrimaryButton disabled={loveValue < 2000} onClick={() => goStep(6)}>
+                    {config.questions.second.nextBtn}
+                  </PrimaryButton>
                 </div>
               </section>
             )}
