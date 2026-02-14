@@ -110,6 +110,15 @@ function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+function shuffleArray(items) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function useDocumentTitle(title) {
   useEffect(() => {
     document.title = title;
@@ -259,87 +268,86 @@ function ensureVisibleButton(hex) {
 }
 
 function FloatingElements({ config, extraBurstCount = 0, emojiOverride }) {
-  const buildElements = useMemo(() => {
-    return () => {
-      const baseEmojis = (emojiOverride && emojiOverride.length
-        ? emojiOverride
-        : [...config.floatingEmojis.hearts, ...config.floatingEmojis.bears]
-      ).map((e) => ({ emoji: e }));
+  const defaultPool = useMemo(
+    () => [...config.floatingEmojis.hearts, ...config.floatingEmojis.bears],
+    [config.floatingEmojis.bears, config.floatingEmojis.hearts]
+  );
 
-      const burst = Array.from({ length: extraBurstCount }).map(() => {
-        const emoji =
-          config.floatingEmojis.hearts[
-            Math.floor(Math.random() * config.floatingEmojis.hearts.length)
-          ];
-        return { emoji, burst: true };
-      });
+  const getActivePool = () => (emojiOverride && emojiOverride.length ? emojiOverride : defaultPool);
 
-      const count = 48;
-      const pick = () => {
-        const all = [...baseEmojis, ...burst];
-        return all[Math.floor(Math.random() * all.length)].emoji;
-      };
+  const createElement = (emoji, idx) => {
+    const isSnow = emoji === "❄️";
+    const layer = rand(0, 1);
+    const size = isSnow ? rand(10, 22) : rand(18, 34);
+    const opacity = isSnow ? clamp(0.25 + layer * 0.65, 0.25, 0.9) : 1;
+    const duration = isSnow ? rand(22, 46) - layer * 10 : rand(12, 26);
+    const delay = rand(0, Math.min(2.2, duration * 0.25));
+    const drift = isSnow ? rand(10, 28) : rand(14, 40);
 
-      return Array.from({ length: count }).map((_, idx) => {
-        const emoji = pick();
-        const isSnow = emoji === "❄️";
-
-        const layer = rand(0, 1);
-        const size = isSnow ? rand(10, 22) : rand(18, 34);
-        const opacity = isSnow ? clamp(0.25 + layer * 0.65, 0.25, 0.9) : 1;
-        const duration = isSnow ? rand(22, 46) - layer * 10 : rand(12, 26);
-
-        // Start from the top. Small stagger so it feels natural.
-        const delay = rand(0, Math.min(2.2, duration * 0.25));
-        const drift = isSnow ? rand(10, 28) : rand(14, 40);
-
-        return {
-          id: `e-${idx}-${Math.random().toString(16).slice(2)}`,
-          idx,
-          emoji,
-          left: `${rand(0, 100)}vw`,
-          delay: `${delay}s`,
-          duration: `${duration}s`,
-          size: `${size}px`,
-          opacity,
-          drift,
-          spin: isSnow ? rand(-60, 60) : 0,
-        };
-      });
+    return {
+      id: `e-${idx}-${Math.random().toString(16).slice(2)}`,
+      idx,
+      emoji,
+      left: `${rand(0, 100)}vw`,
+      delay: `${delay}s`,
+      duration: `${duration}s`,
+      size: `${size}px`,
+      opacity,
+      drift,
+      spin: isSnow ? rand(-60, 60) : 0,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.floatingEmojis.bears, config.floatingEmojis.hearts, extraBurstCount, emojiOverride]);
+  };
 
-  const [elements, setElements] = useState(() => buildElements());
-  const [fading, setFading] = useState(false);
-  const nextRef = useRef(null);
-  const timerRef = useRef(null);
+  const [elements, setElements] = useState(() => {
+    const pool = getActivePool();
+    return Array.from({ length: 48 }).map((_, idx) => {
+      const emoji = pool[Math.floor(Math.random() * pool.length)];
+      return createElement(emoji, idx);
+    });
+  });
+
+  const prevSelectionRef = useRef(new Set(getActivePool()));
+  const prevBurstRef = useRef(extraBurstCount);
 
   useEffect(() => {
-    // On emoji selection change: fade out current emojis one-by-one,
-    // then swap to the new set (which will start from the top).
-    if (timerRef.current) clearTimeout(timerRef.current);
+    const current = getActivePool();
+    const previous = prevSelectionRef.current;
+    const added = current.filter((emoji) => !previous.has(emoji));
 
-    const next = buildElements();
-    nextRef.current = next;
+    if (added.length) {
+      setElements((prev) => {
+        const inject = [];
+        for (let i = 0; i < added.length * 6; i++) {
+          const emoji = added[i % added.length];
+          inject.push(createElement(emoji, prev.length + i));
+        }
+        const next = [...prev, ...inject];
+        return next.length > 140 ? next.slice(next.length - 140) : next;
+      });
+    }
 
-    setFading(true);
-
-    const perItemStagger = 14; // ms
-    const fadeDuration = 420; // ms
-    const total = fadeDuration + elements.length * perItemStagger + 40;
-
-    timerRef.current = setTimeout(() => {
-      setElements(nextRef.current || next);
-      setFading(false);
-      nextRef.current = null;
-    }, total);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    prevSelectionRef.current = new Set(current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildElements]);
+  }, [emojiOverride, defaultPool]);
+
+  useEffect(() => {
+    if (extraBurstCount > prevBurstRef.current) {
+      const addCount = extraBurstCount - prevBurstRef.current;
+      setElements((prev) => {
+        const inject = Array.from({ length: addCount }).map((_, i) => {
+          const emoji =
+            config.floatingEmojis.hearts[
+              Math.floor(Math.random() * config.floatingEmojis.hearts.length)
+            ];
+          return createElement(emoji, prev.length + i);
+        });
+        const next = [...prev, ...inject];
+        return next.length > 180 ? next.slice(next.length - 180) : next;
+      });
+    }
+    prevBurstRef.current = extraBurstCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraBurstCount, config.floatingEmojis.hearts]);
 
   return (
     <div
@@ -368,16 +376,6 @@ function FloatingElements({ config, extraBurstCount = 0, emojiOverride }) {
             "--drift": `${el.drift}px`,
             // @ts-ignore
             "--spin": `${el.spin}deg`,
-            ...(fading
-              ? {
-                  animationName: `floatDown, elementFadeOut`,
-                  animationDuration: `${el.duration}, 420ms`,
-                  animationTimingFunction: `linear, ease`,
-                  animationIterationCount: `infinite, 1`,
-                  animationFillMode: `both, forwards`,
-                  animationDelay: `${el.delay}, ${el.idx * 14}ms`,
-                }
-              : null),
           }}
           aria-hidden="true"
         >
@@ -661,8 +659,6 @@ function ThemeWheel({ color, onChange }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-color)" }}>Pick a vibe ✨</div>
-
       <div
         ref={wheelRef}
         onMouseDown={handlePick}
@@ -740,6 +736,11 @@ function BackButton({ onClick }) {
 // Use project images imported through Vite so URLs are always valid.
 const STEP3_REAL_PHOTO_SRC = originalImage;
 const STEP3_ANIM_PHOTO_SRC = animatedImage;
+const SELECTABLE_EMOJIS = [
+  "❤️","💖","🍆","🍆","🍑","👉👌","👙","💦","😈","😏","🔥","👀","😘","💋",
+  "🌹","🌸","💐","🧸","🐻","🍫","🍓","🍰","🍕","🍔","🍟","💧","🧃","🥤","🍷","🍾","🥂","🍸",
+  "❄️","🎁","✨",
+];
 
 const PUZZLE_ADJ = {
   0: [1, 3],
@@ -1056,9 +1057,6 @@ function Step3Puzzle({ onDone }) {
         )}
       </div>
 
-      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-        Tip: click a tile next to the empty square to move it.
-      </div>
     </section>
   );
 }
@@ -1080,11 +1078,30 @@ export default function App() {
   }, [themeColor]);
 
   const [step, setStep] = useState(1); // 1 Color picker, 2 Emojis, 3 New page, 4 Q1, 5 Love meter, 6 Valentine, 7 Celebration
-  const [loveValue, setLoveValue] = useState(100);
+  const [loveValue, setLoveValue] = useState(0);
+  const [showLoveWarning, setShowLoveWarning] = useState(false);
+  const [loveWarningKey, setLoveWarningKey] = useState(0);
   const [burst, setBurst] = useState(0);
   const [selectedEmojis, setSelectedEmojis] = useState(() => CONFIG.floatingEmojis.hearts);
+  const [emojiChoices] = useState(() => shuffleArray(SELECTABLE_EMOJIS));
+  const loveWarningTimerRef = useRef(null);
 
   const derived = useMemo(() => deriveThemeFromHex(themeColor), [themeColor]);
+  const stripedBackground = useMemo(() => {
+    const { r, g, b } = hexToRgb(derived.backgroundStart);
+    const { h, s, l } = rgbToHsl(r, g, b);
+    const stripeCount = 12;
+    const stops = [];
+
+    for (let i = 0; i < stripeCount; i++) {
+      const from = (i / stripeCount) * 100;
+      const to = ((i + 1) / stripeCount) * 100;
+      const shade = hslToHex(h, s, clamp(l - i * 5, 0, 100));
+      stops.push(`${shade} ${from}%`, `${shade} ${to}%`);
+    }
+
+    return `linear-gradient(to bottom, ${stops.join(", ")})`;
+  }, [derived.backgroundStart]);
 
   // Animated transitions: track direction
   const [direction, setDirection] = useState(1); // 1 forward, -1 back
@@ -1129,13 +1146,30 @@ export default function App() {
     goStep(7);
   };
 
+  const handleLoveNext = () => {
+    if (loveValue < 2000) {
+      if (loveWarningTimerRef.current) clearTimeout(loveWarningTimerRef.current);
+      setLoveWarningKey((k) => k + 1);
+      setShowLoveWarning(true);
+      loveWarningTimerRef.current = setTimeout(() => setShowLoveWarning(false), 3200);
+      return;
+    }
+    goStep(6);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (loveWarningTimerRef.current) clearTimeout(loveWarningTimerRef.current);
+    };
+  }, []);
+
   return (
     <div
       style={{
         minHeight: "100vh",
         width: "100%",
         overflowX: "hidden",
-        background: "linear-gradient(135deg, var(--background-color-1), var(--background-color-2))",
+        background: stripedBackground,
       }}
     >
       <style>{`
@@ -1207,9 +1241,18 @@ export default function App() {
           from { opacity: 1; filter: blur(0px); transform: translateY(0px) scale(1); }
           to { opacity: 0; filter: blur(1.5px); transform: translateY(10px) scale(0.96); }
         }
+
+        @keyframes loveWarnFade {
+          0% { opacity: 0; transform: translateY(5px); }
+          12% { opacity: 1; transform: translateY(0); }
+          72% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-2px); }
+        }
       `}</style>
 
-      <FloatingElements config={config} extraBurstCount={burst} emojiOverride={selectedEmojis} />
+      {step > 1 && (
+        <FloatingElements config={config} extraBurstCount={burst} emojiOverride={selectedEmojis} />
+      )}
       <MusicControls config={config} />
 
       <main
@@ -1246,7 +1289,6 @@ export default function App() {
               />
             </div>
           )}
-
           <h1
             style={{
               color: "var(--accent-text)",
@@ -1257,7 +1299,15 @@ export default function App() {
               textAlign: "center",
             }}
           >
-            {step === 1 ? "Hello lover…" : `${config.valentineName}, my love…`}
+            {step === 1
+              ? "Hello lover… Lets set the mood.."
+              : step === 2
+              ? ""
+              : step === 3
+              ? ""
+              : step === 5
+              ? ""
+              : `${config.valentineName}, my love…`}
           </h1>
 
           <div
@@ -1271,11 +1321,8 @@ export default function App() {
           >
             {step === 1 && (
               <section>
-                <div style={{ color: "var(--text-color)", fontSize: 18, fontWeight: 600 }}>
-                  Set the mood ✨
-                </div>
                 <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
-                  Pick a color vibe — it will change the background, text, and buttons.
+                  Pick a color for your mood — it will customize your experience.
                 </div>
 
                 <div style={{ marginTop: 18 }}>
@@ -1291,12 +1338,8 @@ export default function App() {
             {step === 2 && (
               <section>
                 <h2 style={{ color: "var(--text-color)", fontSize: 22, fontWeight: 600, margin: 0 }}>
-                  Choose the emojis that should fall ✨
+                  Step 2 is for fun.. Choose the emojis that vibe to you right now...✨
                 </h2>
-
-                <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
-                  Tap to select. Your selection will fall from the sky.
-                </div>
 
                 <div
                   style={{
@@ -1307,9 +1350,7 @@ export default function App() {
                     marginTop: 16,
                   }}
                 >
-                  {[
-                    "❤️","💖","🍆","🍆","🍑","👉👌","👙","💦","😈","😏","🔥","👀","😘","💋","🌹","🧸","🐻","❄️","🎁","✨",
-                  ].map((emoji, idx) => {
+                  {emojiChoices.map((emoji, idx) => {
                     const active = selectedEmojis.includes(emoji);
                     return (
                       <button
@@ -1421,7 +1462,11 @@ export default function App() {
                     min={0}
                     max={10000}
                     value={loveValue}
-                    onChange={(e) => setLoveValue(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const next = parseInt(e.target.value, 10);
+                      setLoveValue(next);
+                      if (next >= 2000) setShowLoveWarning(false);
+                    }}
                     style={{
                       ...meterWidthStyle,
                       height: 22,
@@ -1468,20 +1513,22 @@ export default function App() {
                 </div>
 
                 <div style={{ marginTop: 18 }}>
-                  {loveValue < 2000 && (
+                  {showLoveWarning && (
                     <div
+                      key={loveWarningKey}
                       style={{
                         marginBottom: 10,
                         color: "var(--accent-text)",
                         fontSize: 13,
                         fontWeight: 600,
+                        animation: "loveWarnFade 3.2s ease forwards",
                       }}
                     >
                       You haven&apos;t met the expected level of anticipated lovingness yet.
                       Please crank it to at least 2000% to continue.
                     </div>
                   )}
-                  <PrimaryButton disabled={loveValue < 2000} onClick={() => goStep(6)}>
+                  <PrimaryButton onClick={handleLoveNext}>
                     {config.questions.second.nextBtn}
                   </PrimaryButton>
                 </div>
@@ -1533,7 +1580,7 @@ export default function App() {
                 <div style={{ marginTop: 22 }}>
                   <PrimaryButton
                     onClick={() => {
-                      setLoveValue(100);
+                      setLoveValue(0);
                       setBurst(0);
                       goStep(1);
                     }}
