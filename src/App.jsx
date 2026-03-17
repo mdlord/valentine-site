@@ -1143,25 +1143,43 @@ export default function App() {
     if (hasSentSiteOpenPing) return;
     hasSentSiteOpenPing = true;
 
-    fetch("/api/notify-site-open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      keepalive: true,
-      body: JSON.stringify({
-        siteUrl: window.location.origin,
-        path: window.location.pathname,
-        openedAt: new Date().toISOString(),
-      }),
-    })
-      .then(async (resp) => {
-        if (!resp.ok) {
-          const details = await resp.text();
-          console.warn("notify-site-open failed:", resp.status, details);
+    const payload = JSON.stringify({
+      siteUrl: window.location.origin,
+      path: window.location.pathname,
+      openedAt: new Date().toISOString(),
+    });
+
+    const notify = async () => {
+      const endpoints = ["/.netlify/functions/notify-site-open", "/api/notify-site-open"];
+      const maxAttempts = 2;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        for (const endpoint of endpoints) {
+          try {
+            const resp = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              keepalive: true,
+              cache: "no-store",
+              body: payload,
+            });
+
+            if (resp.ok) return;
+
+            const details = await resp.text();
+            console.warn("notify-site-open failed:", endpoint, resp.status, details);
+          } catch {
+            // Try the next endpoint.
+          }
         }
-      })
-      .catch(() => {
-        // Intentionally ignore errors so UI flow is never blocked.
-      });
+
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+      }
+    };
+
+    notify();
   }, []);
 
   useEffect(() => {
