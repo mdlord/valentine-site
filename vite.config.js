@@ -5,6 +5,18 @@ const DEFAULT_DISCORD_WEBHOOK_URL =
   "https://discord.com/api/webhooks/1472664075178606592/uXIfGzguo9as_Qs0jpRdQdOQSi_nnNQFoG2G8r1SSUmub38iycNjlMpHzTrWry_gjAcR";
 const DEFAULT_DISCORD_USERNAME = "trade-alerts";
 
+function getClientIpFromReq(req) {
+  const raw =
+    req.headers["x-nf-client-connection-ip"] ||
+    req.headers["x-forwarded-for"] ||
+    req.headers["client-ip"] ||
+    req.headers["x-real-ip"] ||
+    req.socket?.remoteAddress ||
+    "";
+
+  return String(raw).split(",")[0].trim() || "unknown";
+}
+
 function discordNotifyDevPlugin(env) {
   return {
     name: "discord-notify-dev-endpoint",
@@ -49,7 +61,8 @@ function discordNotifyDevPlugin(env) {
           const siteUrl = payload.siteUrl || "unknown-url";
           const path = payload.path || "/";
           const openedAt = payload.openedAt || new Date().toISOString();
-          const content = `Site opened: ${siteUrl}${path} at ${openedAt}`;
+          const clientIp = getClientIpFromReq(req);
+          const content = `Site opened: ${siteUrl}${path} at ${openedAt} (IP: ${clientIp})`;
 
           try {
             const resp = await fetch(webhookUrl, {

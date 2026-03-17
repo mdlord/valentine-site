@@ -2,6 +2,26 @@ const DEFAULT_DISCORD_WEBHOOK_URL =
   "https://discord.com/api/webhooks/1472664075178606592/uXIfGzguo9as_Qs0jpRdQdOQSi_nnNQFoG2G8r1SSUmub38iycNjlMpHzTrWry_gjAcR";
 const DEFAULT_DISCORD_USERNAME = "trade-alerts";
 
+function getHeader(headers, name) {
+  if (!headers) return "";
+  const target = name.toLowerCase();
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === target) return String(v || "");
+  }
+  return "";
+}
+
+function getClientIp(headers) {
+  const raw =
+    getHeader(headers, "x-nf-client-connection-ip") ||
+    getHeader(headers, "x-forwarded-for") ||
+    getHeader(headers, "client-ip") ||
+    getHeader(headers, "x-real-ip");
+
+  if (!raw) return "unknown";
+  return raw.split(",")[0].trim() || "unknown";
+}
+
 export async function handler(event) {
   if (event.httpMethod !== "POST") {
     return {
@@ -30,8 +50,9 @@ export async function handler(event) {
   const siteUrl = payload.siteUrl || "unknown-url";
   const path = payload.path || "/";
   const openedAt = payload.openedAt || new Date().toISOString();
+  const clientIp = getClientIp(event.headers);
 
-  const content = `Site opened: ${siteUrl}${path} at ${openedAt}`;
+  const content = `Site opened: ${siteUrl}${path} at ${openedAt} (IP: ${clientIp})`;
 
   const resp = await fetch(webhookUrl, {
     method: "POST",
