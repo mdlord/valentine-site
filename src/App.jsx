@@ -102,6 +102,8 @@ const CONFIG = {
   },
 };
 
+let hasSentSiteOpenPing = false;
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -538,7 +540,6 @@ function PrimaryButton({ children, onClick, style, disabled = false }) {
         padding: "10px 18px",
         fontSize: 18,
         fontWeight: 500,
-        cursor: "pointer",
         boxShadow: "0 10px 20px rgba(0,0,0,0.12)",
         transition: "transform 160ms ease, filter 160ms ease, opacity 160ms ease",
         opacity: disabled ? 0.5 : 1,
@@ -560,6 +561,7 @@ function PrimaryButton({ children, onClick, style, disabled = false }) {
 function MusicControls({ config }) {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [audioError, setAudioError] = useState("");
   const enabled = config.music?.enabled;
 
   useEffect(() => {
@@ -568,7 +570,18 @@ function MusicControls({ config }) {
     if (!a) return;
 
     a.volume = clamp(config.music?.volume ?? 0.5, 0, 1);
-    a.src = config.music?.musicUrl || "";
+    const onPlay = () => {
+      setIsPlaying(true);
+      setAudioError("");
+    };
+    const onPause = () => setIsPlaying(false);
+    const onError = () => {
+      setIsPlaying(false);
+      setAudioError("Unable to play audio. Check the music URL.");
+    };
+    a.addEventListener("play", onPlay);
+    a.addEventListener("pause", onPause);
+    a.addEventListener("error", onError);
 
     const tryAutoplay = async () => {
       if (!config.music?.autoplay) return;
@@ -581,6 +594,12 @@ function MusicControls({ config }) {
     };
 
     tryAutoplay();
+
+    return () => {
+      a.removeEventListener("play", onPlay);
+      a.removeEventListener("pause", onPause);
+      a.removeEventListener("error", onError);
+    };
   }, [config.music?.autoplay, config.music?.musicUrl, config.music?.volume, enabled]);
 
   if (!enabled) return null;
@@ -591,10 +610,13 @@ function MusicControls({ config }) {
 
     if (a.paused) {
       try {
+        if (a.readyState < 2) a.load();
         await a.play();
         setIsPlaying(true);
+        setAudioError("");
       } catch {
         setIsPlaying(false);
+        setAudioError("Unable to play audio. Check the music URL.");
       }
     } else {
       a.pause();
@@ -621,7 +643,12 @@ function MusicControls({ config }) {
       >
         {isPlaying ? config.music.stopText : config.music.startText}
       </button>
-      <audio ref={audioRef} loop preload="auto" />
+      {audioError && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "white", textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}>
+          {audioError}
+        </div>
+      )}
+      <audio ref={audioRef} loop preload="auto" src={config.music?.musicUrl || ""} />
     </div>
   );
 }
@@ -1110,6 +1137,32 @@ export default function App() {
     setDirection(next > step ? 1 : -1);
     setStep(next);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (hasSentSiteOpenPing) return;
+    hasSentSiteOpenPing = true;
+
+    fetch("/api/notify-site-open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        siteUrl: window.location.origin,
+        path: window.location.pathname,
+        openedAt: new Date().toISOString(),
+      }),
+    })
+      .then(async (resp) => {
+        if (!resp.ok) {
+          const details = await resp.text();
+          console.warn("notify-site-open failed:", resp.status, details);
+        }
+      })
+      .catch(() => {
+        // Intentionally ignore errors so UI flow is never blocked.
+      });
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;

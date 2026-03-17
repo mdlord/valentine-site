@@ -1,0 +1,6 @@
+[[redirects]]
+  from = "/api/notify-site-open"
+  to = "/.netlify/functions/notify-site-open"
+  status = 200
+  force = true
+
